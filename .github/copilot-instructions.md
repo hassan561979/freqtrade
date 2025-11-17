@@ -295,6 +295,79 @@ docker ps | grep freqtrade
 
 ## Pine Script Integration
 
+### Pine Script Structure in Strategy Files
+**CRITICAL**: Every strategy file MUST contain an embedded Pine Script version for TradingView visualization and comparison.
+
+**File Structure**:
+```python
+# ... Freqtrade strategy code (class definition, methods, etc.) ...
+
+"""
+=============================================================================
+TRADINGVIEW PINE SCRIPT VERSION
+=============================================================================
+Copy the code below (between the START and END markers) into TradingView Pine Editor
+
+────────────────────────── START PINE SCRIPT ──────────────────────────
+
+//@version=5
+strategy("Strategy Name", overlay=true, ...)
+
+// Pine Script code here
+
+─────────────────────────── END PINE SCRIPT ───────────────────────────
+=============================================================================
+"""
+```
+
+**Extraction Pattern**:
+The report server (`report_server.py`) extracts Pine Script using this regex pattern:
+```python
+pattern = r'────────────────────────── START PINE SCRIPT ──────────────────────────\s*\n(.*?)\s*─────────────────────────── END PINE SCRIPT ───────────────────────────'
+match = re.search(pattern, content, re.DOTALL)
+pine_script = match.group(1).strip()
+```
+
+**Key Points**:
+1. **Exact markers required**: Must use the exact dashed line markers (START/END PINE SCRIPT)
+2. **Multi-line string**: Pine Script is embedded in a Python multi-line docstring `"""..."""`
+3. **Location**: Always at the END of the strategy file, after all class definitions
+4. **Format**: Complete, runnable Pine Script v5 code between markers
+5. **Display**: Report server automatically extracts and displays with copy button
+
+### Report Server Pine Script Integration
+**Location**: `user_data/report_server.py`
+
+**Function**: `extract_pine_script(strategy_name)`
+- Reads strategy file from `/freqtrade/user_data/strategies/{strategy_name}.py`
+- Uses regex to find content between START/END markers
+- Returns empty string if file not found or markers missing
+- Called automatically when loading backtest data
+
+**Display Features**:
+- Dark-themed code editor styling (`#1e1e1e` background)
+- Syntax-preserved display with `<pre>` tags
+- **Copy to Clipboard** button with success feedback
+- Scrollable code box (max 500px height)
+- Shows "No Pine Script found" if strategy missing embedded code
+
+**Implementation**:
+```python
+def extract_pine_script(strategy_name):
+    """Extract Pine Script from strategy file"""
+    strategies_dir = Path('/freqtrade/user_data/strategies')
+    strategy_file = strategies_dir / f"{strategy_name}.py"
+    
+    if not strategy_file.exists():
+        return ""
+    
+    content = strategy_file.read_text()
+    pattern = r'────────────────────────── START PINE SCRIPT ──────────────────────────\s*\n(.*?)\s*─────────────────────────── END PINE SCRIPT ───────────────────────────'
+    match = re.search(pattern, content, re.DOTALL)
+    
+    return match.group(1).strip() if match else ""
+```
+
 ### Automatic Pine Script Generation
 **IMPORTANT**: When creating a new strategy or modifying an existing strategy, ALWAYS add or update the TradingView Pine Script at the end of the strategy file.
 
