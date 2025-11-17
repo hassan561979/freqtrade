@@ -226,10 +226,28 @@ docker exec freqtrade freqtrade download-data \
 ```
 
 ### Run Backtest
+**Important**: Always run backtests on **4 months of data** (July 16 to Nov 16, 2025) as the primary timerange. This provides sufficient data for reliable metrics while avoiding memory constraints with multiple pairs.
+
 ```bash
+# Primary: 4-month backtest (July 16 to Nov 16, 2025)
+# Download data with 2-day buffer: July 14, 2025 to Nov 16, 2025
 docker exec freqtrade freqtrade backtesting \
-  --strategy StochCrossStrategy \
-  --timerange 20251015-20251112
+  --strategy UTBotScalping1m \
+  --timerange 20250716-20251116 \
+  --cache none
+
+# For multiple pairs with memory constraints, use --enable-protections to reduce memory usage:
+docker exec freqtrade freqtrade backtesting \
+  --strategy UTBotScalping1m \
+  --timerange 20250716-20251116 \
+  --cache none \
+  --export trades
+
+# Alternative: 1-year backtest (Nov 16, 2024 to Nov 16, 2025) - use only for single pair testing
+docker exec freqtrade freqtrade backtesting \
+  --strategy UTBotScalping1m \
+  --timerange 20241116-20251116 \
+  --cache none
 ```
 
 ### Start Report Server
@@ -275,15 +293,90 @@ docker compose up -d
 docker ps | grep freqtrade
 ```
 
+## Pine Script Integration
+
+### Automatic Pine Script Generation
+**IMPORTANT**: When creating a new strategy or modifying an existing strategy, ALWAYS add or update the TradingView Pine Script at the end of the strategy file.
+
+**Requirements**:
+1. **New Strategy**: Add complete Pine Script v5 code as multi-line string comment at end of file
+2. **Modified Strategy**: Update the existing Pine Script to match changes
+3. **Format**: Use `strategy()` (not `indicator()`) to generate trade list in TradingView
+4. **Match Settings**: Pine Script must match Freqtrade configuration:
+   - ROI table (minimal_roi)
+   - Stop loss (stoploss)
+   - Trailing stop (trailing_stop_positive, trailing_stop_positive_offset)
+   - Entry/exit logic
+   - Indicator parameters
+
+**Pine Script Template**:
+```python
+"""
+=============================================================================
+TRADINGVIEW PINE SCRIPT VERSION
+=============================================================================
+Copy the code below (between the START and END markers) into TradingView Pine Editor
+
+────────────────────────── START PINE SCRIPT ──────────────────────────
+
+//@version=5
+strategy("Strategy Name", overlay=true, 
+         initial_capital=1000, default_qty_type=strategy.fixed, default_qty_value=100,
+         commission_type=strategy.commission.percent, commission_value=0.1)
+
+// Parameters
+param1 = input.float(3.5, title="Parameter 1", minval=1.0, maxval=10.0, step=0.1)
+
+// Indicator calculations
+// ...
+
+// Entry & Exit Signals
+buySignal = ... // Your buy condition
+sellSignal = ... // Your sell condition
+
+// Strategy Orders (Execute Trades)
+if buySignal
+    strategy.entry("Long", strategy.long)
+
+if sellSignal
+    strategy.close("Long")
+
+// Plots
+plot(..., title="Indicator", color=color.green, linewidth=2)
+plotshape(buySignal, title="Buy Signal", location=location.belowbar, 
+          color=color.green, style=shape.triangleup, size=size.small)
+plotshape(sellSignal, title="Sell Signal", location=location.abovebar, 
+          color=color.red, style=shape.triangledown, size=size.small)
+
+// Strategy Settings (Matches Freqtrade Config)
+// ROI Table: [list ROI levels]
+// Trailing Stop: [describe trailing stop settings]
+// Stop Loss: [describe stop loss]
+// Exit Signals: [describe if enabled/disabled and why]
+
+─────────────────────────── END PINE SCRIPT ───────────────────────────
+=============================================================================
+"""
+```
+
+**Benefits**:
+- Visualize strategy on TradingView charts
+- Compare backtest results between Freqtrade and TradingView
+- Test strategy on different pairs/timeframes easily
+- Share strategy with others for review
+- Quick visual debugging of entry/exit signals
+
 ## Development Workflow
 
 1. **Create/modify strategy** in `user_data/strategies/`
-2. **Download data** with 2-day buffer for startup period
-3. **Run backtest** with `--cache none` for fresh results
-4. **Generate HTML report** with `generate_report.py`
-5. **Analyze results** in the browser (check exit reasons, win rates by pair)
-6. **Iterate** on strategy parameters based on analysis
-7. **Commit changes** to git (remember to track strategy files)
+2. **Add/update Pine Script** at end of strategy file (matches Freqtrade logic)
+3. **Download data** with 2-day buffer for startup period
+4. **Run backtest** with `--cache none` for fresh results
+5. **Generate HTML report** with `generate_report.py`
+6. **Analyze results** in the browser (check exit reasons, win rates by pair)
+7. **Verify in TradingView** using the Pine Script version
+8. **Iterate** on strategy parameters based on analysis
+9. **Commit changes** to git (remember to track strategy files)
 
 ## Key Learnings
 
