@@ -228,6 +228,8 @@ docker exec freqtrade freqtrade download-data \
 ### Run Backtest
 **Important**: Always run backtests on **4 months of data** (July 16 to Nov 16, 2025) as the primary timerange. This provides sufficient data for reliable metrics while avoiding memory constraints with multiple pairs.
 
+**CRITICAL**: NEVER run backtests with `isBackground=true`. Always run in foreground (`isBackground=false`) so the user can see complete test logs and results. Backtests typically take 2-5 minutes to complete.
+
 ```bash
 # Primary: 4-month backtest (July 16 to Nov 16, 2025)
 # Download data with 2-day buffer: July 14, 2025 to Nov 16, 2025
@@ -249,6 +251,12 @@ docker exec freqtrade freqtrade backtesting \
   --timerange 20241116-20251116 \
   --cache none
 ```
+
+**Backtest Execution Rules**:
+- Always use `isBackground=false` when running backtests
+- Wait for complete results (2-5 minutes typical duration)
+- Never interrupt or cancel backtests unless explicitly requested by user
+- Display full backtest output including trade tables and exit reasons
 
 ### Start Report Server
 ```bash
@@ -439,17 +447,109 @@ plotshape(sellSignal, title="Sell Signal", location=location.abovebar,
 - Share strategy with others for review
 - Quick visual debugging of entry/exit signals
 
+## Higher Timeframe (HTF) Trend Integration
+
+### Quick Overview
+HTF trend filtering uses indicators from a higher timeframe to filter entry signals, reducing whipsaw trades and improving win rate by only trading in the direction of the larger trend.
+
+**Example**: 1m strategy with 5m SuperTrend filter rejected 4,025 of 4,466 entry signals (90%), improving win rate from 27.7% to 95.9%.
+
+**Reference Implementation**: See `user_data/strategies/UTBotScalping1m.py` and `user_data/strategies/mixins/HTFTrendMixin.py` for complete working code.
+
+### Integration Steps
+
+1. **Inherit HTFTrendMixin** in your strategy (before IStrategy):
+   ```python
+   from mixins import HTFTrendMixin
+   class YourStrategy(HTFTrendMixin, IStrategy):
+   ```
+
+2. **Configure informative_pairs()** - Load HTF data with auto-download:
+   ```python
+   def informative_pairs(self):
+       pairs = []
+       htf = self.get_higher_timeframe()
+       if htf:
+           whitelist_pairs = self.dp.current_whitelist()
+           self.check_and_download_htf_data(whitelist_pairs, htf)  # Critical: Before caching!
+           pairs = [(pair, htf) for pair in whitelist_pairs]
+       return pairs
+   ```
+
+3. **Add HTF indicators** in populate_indicators():
+   ```python
+   dataframe = self.add_htf_trend_indicators(dataframe, metadata)
+   ```
+
+4. **Filter entries** in populate_entry_trend():
+   ```python
+   htf_bullish = self.check_htf_trend(dataframe, direction='bullish')
+   if htf_bullish is not None:
+       conditions.append(htf_bullish)
+   ```
+
+### How It Works
+- **Timeframe Mapping**: 1m→5m, 5m→15m, 15m→1h, 30m→1h, 1h→4h, 4h→1d
+- **Auto-Download**: Missing HTF data downloads automatically on first backtest
+- **Forward-Fill**: HTF values merge to base timeframe (each 5m value fills five 1m rows)
+- **Trend Check**: SuperTrend on HTF (period=10, multiplier=3.0) returns 1=bullish, -1=bearish
+
+### Critical Requirements
+
+**⚠️ TIMING IS EVERYTHING**: 
+- `check_and_download_htf_data()` MUST be called from `informative_pairs()` (before data caching)
+- Calling from `populate_indicators()` will FAIL (data already cached)
+
+**Data Buffer**: Download from 2 days before backtest start for HTF warmup period
+
+**Cache**: Use `--cache none` during development to force fresh calculations
+
+### Troubleshooting
+
+| Issue | Symptom | Solution |
+|-------|---------|----------|
+| Missing HTF data | "No HTF data for pair" warning | Auto-downloads on first run; check logs or manually download with `--prepend` |
+| Download fails | Data missing every backtest | Move `check_and_download_htf_data()` to `informative_pairs()` |
+| Column not found | `KeyError: 'htf_trend_5m'` | Verify HTF data exists, check merge succeeded, print dataframe columns |
+| All entries rejected | 0 trades, thousands rejected | HTF filter too strict; check trend distribution, widen SuperTrend multiplier |
+
+### Customization
+
+**Different HTF timeframe**: Modify `get_higher_timeframe()` in HTFTrendMixin
+**Different indicator**: Replace SuperTrend calculation in `add_htf_trend_indicators()`
+**Multiple HTF filters**: Stack multiple timeframes (e.g., 5m + 15m both bullish)
+
+### Testing Pattern
+
+```bash
+# 1. Baseline without HTF
+docker exec freqtrade freqtrade backtesting --strategy YourStrategy --timerange 20250701-20250801 --cache none
+
+# 2. Add HTF integration to strategy
+
+# 3. Test with HTF (data auto-downloads)
+docker exec freqtrade freqtrade backtesting --strategy YourStrategy --timerange 20250701-20250801 --cache none
+
+# 4. Compare: Should see ↓ trades, ↑ win rate, ↑ profit, + rejected signals count
+```
+
+### Real Results (UTBotScalping1m)
+- **Without HTF**: 4,466 trades, 27.7% win rate, -89.93% loss
+- **With 5m HTF**: 441 trades, 95.9% win rate, +2.25% profit
+- **Filter Impact**: 4,025 counter-trend entries avoided (90% rejection rate)
+
 ## Development Workflow
 
 1. **Create/modify strategy** in `user_data/strategies/`
 2. **Add/update Pine Script** at end of strategy file (matches Freqtrade logic)
-3. **Download data** with 2-day buffer for startup period
-4. **Run backtest** with `--cache none` for fresh results
-5. **Generate HTML report** with `generate_report.py`
-6. **Analyze results** in the browser (check exit reasons, win rates by pair)
-7. **Verify in TradingView** using the Pine Script version
-8. **Iterate** on strategy parameters based on analysis
-9. **Commit changes** to git (remember to track strategy files)
+3. **Integrate HTF filtering** using HTFTrendMixin (if desired)
+4. **Download data** with 2-day buffer for startup period
+5. **Run backtest** with `--cache none` for fresh results
+6. **Generate HTML report** with `generate_report.py`
+7. **Analyze results** in the browser (check exit reasons, win rates by pair, rejected signals)
+8. **Verify in TradingView** using the Pine Script version
+9. **Iterate** on strategy parameters based on analysis
+10. **Commit changes** to git (remember to track strategy files)
 
 ## Key Learnings
 

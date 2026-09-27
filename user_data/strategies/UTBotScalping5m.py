@@ -32,16 +32,17 @@ import talib.abstract as ta  # Technical Analysis library for ATR calculation
 import pandas_ta as pta  # Pandas Technical Analysis (not currently used but available)
 
 
-class UTBotScalping1m(FearGreedMixin, HTFTrendMixin, IStrategy):
+class UTBotScalping5m(FearGreedMixin, HTFTrendMixin, IStrategy):
     """
-    UT Bot Scalping Strategy (1m timeframe) with 15m HTF Trend Filter
+    UT Bot Scalping Strategy (5m timeframe) with 15m HTF Trend Filter
     
-    === LATEST CONFIGURATION (Nov 21, 2025) ===
-    - HTF Mapping: 1m → 15m (SuperTrend filter)
+    === CONFIGURATION (Nov 22, 2025) ===
+    - Timeframe: 5m candles (300 seconds)
+    - HTF Mapping: 5m → 15m (SuperTrend filter)
     - Exit Signals: DISABLED (use_exit_signal = False)
     - Trailing Stop: Active at 0.4% profit, trails 0.2% below high
     - Hard Stop Loss: DISABLED (-99%)
-    - ROI: 3% immediate exit (OPTIMAL - acts as safety net, never triggers)
+    - ROI: 3% immediate exit (acts as safety net)
     
     === ENTRY CONDITIONS ===
     1. UT Bot BUY signal (price crosses above trailing stop)
@@ -51,175 +52,29 @@ class UTBotScalping1m(FearGreedMixin, HTFTrendMixin, IStrategy):
     4. 15m SuperTrend: Bullish (HTF trend filter)
     
     === EXIT CONDITIONS ===
-    1. ROI: 3% safety net (never hit in testing - trailing stop exits first)
+    1. ROI: 3% safety net (only triggers if trailing stop fails)
     2. Trailing Stop: Activates at 0.4% profit, trails 0.2% below high
-    3. UT Bot SELL signals: DISABLED (had 5.9% win rate)
+    3. UT Bot SELL signals: DISABLED (typically have low win rate on lower timeframes)
     
-    === ROI OPTIMIZATION RESULTS (June 1 - Aug 1, 2025) ===
-    32 pairs, 61 days, 1000 USDT starting capital
-    Testing different ROI levels to find optimal profit-taking strategy
+    === STRATEGY NOTES ===
+    - 5m timeframe provides slower signals than 1m, potentially more reliable
+    - HTF filter (15m) helps avoid counter-trend entries
+    - Fear & Greed filter blocks trades during extreme fear (<50)
+    - Volume filter ensures momentum behind entry signals
+    - No hard stop loss - relies on trailing stop for exits
     
-    ┌──────────────┬─────────┬──────────┬─────────┬──────────┬────────────┬──────────┐
-    │ ROI Config   │ Profit  │ ROI Exits│ Trailing│ Trail P/L│ Win Rate   │ Sharpe   │
-    ├──────────────┼─────────┼──────────┼─────────┼──────────┼────────────┼──────────┤
-    │ 3.0% ⭐ NEW  │ +66.75  │    0     │   539   │ +199.48  │   96.9%    │  10.22   │
-    │              │ (+6.68%)│          │ (98.5%) │          │  531/0/17  │          │
-    ├──────────────┼─────────┼──────────┼─────────┼──────────┼────────────┼──────────┤
-    │ 2.0% (Old)   │ +65.49  │    3     │   536   │ +192.23  │   96.9%    │  10.04   │
-    │              │ (+6.55%)│ (100%)   │ (98.5%) │          │  531/0/17  │          │
-    ├──────────────┼─────────┼──────────┼─────────┼──────────┼────────────┼──────────┤
-    │ 1.5%         │ +63.75  │    5     │   534   │ +188.99  │   96.9%    │   9.79   │
-    │              │ (+6.38%)│ (100%)   │ (98.5%) │          │  531/0/17  │          │
-    ├──────────────┼─────────┼──────────┼─────────┼──────────┼────────────┼──────────┤
-    │ Stepped      │ +63.28  │   19     │   521   │ +177.02  │   96.9%    │   9.73   │
-    │ 2→1.5→1.2→1% │ (+6.33%)│ (100%)   │ (98.5%) │          │  530/0/19  │          │
-    └──────────────┴─────────┴──────────┴─────────┴──────────┴────────────┴──────────┘
+    === BACKTEST RESULTS ===
+    This is a new strategy - no backtest results available yet.
+    Run backtests to evaluate performance before live trading.
     
-    === RECOMMENDATION: USE 3% ROI ===
-    ✅ Best profit: +66.75 USDT (+1.93% better than 2% ROI)
-    ✅ Zero premature ROI exits - lets winners develop fully
-    ✅ Highest trailing stop profit: +199.48 USDT
-    ✅ Acts as safety net that never triggers in normal conditions
-    ✅ Best risk-adjusted returns: Sharpe 10.22
+    === RECOMMENDED TESTING ===
+    1. Backtest on multiple pairs (at least 10-20 pairs)
+    2. Test across different market conditions (uptrend, downtrend, sideways)
+    3. Evaluate minimum 2-3 months of data per test
+    4. Monitor force exits and losing positions closely
+    5. Consider adding time-based or hard stop loss if positions held too long
     
-    Key Finding: Higher ROI (3%) outperforms because it never triggers, allowing
-    all trades to exit via trailing stop at optimal profit levels. Lower ROIs 
-    (1.5%, 2%) cause premature exits, cutting winners short before they reach
-    peak trailing stop profits.
-    
-    === HTF TREND FILTER COMPARISON (2 months) ===
-    ┌──────────────┬─────────┬────────────┬──────────┬────────────┬──────────┐
-    │ Configuration│ Profit  │ Win Rate   │ Trades   │ Drawdown   │ Sharpe   │
-    ├──────────────┼─────────┼────────────┼──────────┼────────────┼──────────┤
-    │ 15m HTF ⭐   │ +66.75  │   96.9%    │   548    │   11.07%   │  10.22   │
-    │              │ (+6.68%)│            │          │ 132.73 USDT│          │
-    ├──────────────┼─────────┼────────────┼──────────┼────────────┼──────────┤
-    │ 30m HTF      │ +49.70  │   96.2%    │   478    │   10.92%   │   7.33   │
-    │              │ (+4.97%)│            │          │ 128.66 USDT│          │
-    ├──────────────┼─────────┼────────────┼──────────┼────────────┼──────────┤
-    │ No HTF       │ -89.93  │   27.7%    │  4,466   │    N/A     │   N/A    │
-    │ (Baseline)   │ (-8.99%)│            │          │            │          │
-    └──────────────┴─────────┴────────────┴──────────┴────────────┴──────────┘
-    
-    === BEST PERFORMERS (15m HTF, 2 months) ===
-    1. BCH/USDT:  +9.76 USDT (+0.98%), 22 trades, 100% win rate
-    2. TRX/USDT:  +9.74 USDT (+0.97%), 25 trades, 100% win rate
-    3. ETH/USDT:  +9.10 USDT (+0.91%), 25 trades, 100% win rate
-    
-    === WORST PERFORMERS (15m HTF, 2 months) ===
-    1. VET/USDT:  -18.45 USDT (-1.85%), 11 trades, 90.9% win rate
-    2. SHIB/USDT: -17.36 USDT (-1.69%), 12 trades, 83.3% win rate
-    3. AVAX/USDT: -12.02 USDT (-1.20%), 21 trades, 95.2% win rate
-    
-    === KEY INSIGHTS ===
-    - HTF trend filtering is CRITICAL: Without it, strategy loses 90%
-    - 15m HTF provides optimal balance between filtering and opportunity
-    - 3% ROI is optimal: Never triggers, acts as safety net only
-    - Trailing stop highly effective: 539 exits, 98.5% win rate, +199.48 USDT
-    - Lower ROIs cause premature exits: 1.5% ROI lost 3.24 USDT in trailing profit
-    - Fear & Greed filter: Blocked 5,760/87,871 candles (6.6%)
-    - HTF filter: Rejected 7,261 counter-trend entries
-    - Strategy relies 100% on trailing stop for exits (ROI never hit)
-    
-    === JAN-JUNE 2025 COMPREHENSIVE TEST (Nov 22, 2025) ===
-    32 pairs, 180 days (6 months), 1000 USDT starting capital
-    Split into 3 tests due to memory constraints (2 months each)
-    
-    ┌──────────────┬─────────┬────────────┬──────────┬────────────┬──────────────┬──────────┐
-    │ Period       │ Profit  │ Win Rate   │ Trades   │ Trail Exits│ Force Exits  │ F&G Block│
-    ├──────────────┼─────────┼────────────┼──────────┼────────────┼──────────────┼──────────┤
-    │ Test 1       │ -296.01 │   94.8%    │   270    │ +92.6 USDT │ -388.6 USDT  │  30.5%   │
-    │ Jan-Mar      │ (-29.6%)│ 256/0/14   │ (4.6/day)│ 261 (98.1%)│   9 (0%)     │          │
-    │              │         │            │          │            │              │          │
-    │ Test 2       │  -11.24 │   93.5%    │   153    │ +53.3 USDT │ -64.5 USDT   │  86.9%   │
-    │ Mar-May      │ (-1.12%)│ 143/0/10   │ (2.5/day)│ 144 (99.3%)│   9 (0%)     │          │
-    │              │         │            │          │            │              │          │
-    │ Test 3       │  -36.28 │   96.8%    │   400    │+149.0 USDT │ -188.3 USDT  │   6.7%   │
-    │ May-Jun      │ (-3.63%)│ 387/0/13   │ (6.7/day)│ 390 (99.0%)│   9 (0%)     │          │
-    │              │         │            │          │ +3.0 ROI!  │              │          │
-    ├──────────────┼─────────┼────────────┼──────────┼────────────┼──────────────┼──────────┤
-    │ TOTAL        │ -343.53 │   95.5%    │   823    │+294.9 USDT │ -641.4 USDT  │  Varied  │
-    │ Jan-Jun 2025 │ (-34.4%)│ 786/0/37   │ (4.6/day)│ 795 (98.9%)│  27 (0%)     │          │
-    └──────────────┴─────────┴────────────┴──────────┴────────────┴──────────────┴──────────┘
-    
-    Market Conditions:
-    - Jan-Mar 2025: -30.21% (extreme downtrend)
-    - Mar-May 2025: -6.16% (continued decline)
-    - May-Jun 2025: +2.89% (recovery beginning)
-    
-    === CRITICAL FINDING: FORCE EXIT CATASTROPHE ===
-    Problem Identified: 27 positions held to end of backtest periods
-    - Trailing stops generated: +294.9 USDT profit (98.9% win rate) ✅
-    - Force exits destroyed: -641.4 USDT loss (0% win rate) ❌
-    - Force exits account for 186% of total loss
-    - Average hold time: 26-50 days per losing position
-    - Average loss per force exit: -23.8 USDT (-20 to -35% each)
-    
-    Worst Force Exit Losses:
-    1. RUNE/USDT: -35.2 USDT (-35.21%), held 38 days
-    2. DOGE/USDT: -33.3 USDT (-33.29%), held 38 days
-    3. HBAR/USDT: -29.0 USDT (-29.03%), held 47 days
-    4. ALGO/USDT: -24.9 USDT (-24.87%), held 38 days
-    5. INJ/USDT:  -24.8 USDT (-24.79%), held 32 days
-    
-    Root Cause: Strategy has NO mechanism to exit losing positions
-    - Trailing stop only activates AFTER reaching 0.4% profit
-    - During downtrends, positions never reach activation threshold
-    - Positions held indefinitely until backtest ends (force exit)
-    - Hard stoploss disabled (-99% = effectively infinite loss tolerance)
-    
-    === COMPARISON: UPTREND vs DOWNTREND PERFORMANCE ===
-    ┌──────────────┬─────────┬────────────┬──────────┬──────────────┬──────────────┐
-    │ Period       │ Profit  │ Win Rate   │ Trades   │ Force Exits  │ Market Move  │
-    ├──────────────┼─────────┼────────────┼──────────┼──────────────┼──────────────┤
-    │ Jun-Aug 2024 │ +66.75  │   96.9%    │   548    │   0 exits    │ Uptrend      │
-    │ (UPTREND)    │ (+6.68%)│            │          │   0 USDT     │ (positive)   │
-    ├──────────────┼─────────┼────────────┼──────────┼──────────────┼──────────────┤
-    │ Jan-Jun 2025 │ -343.53 │   95.5%    │   823    │  27 exits    │ Downtrend    │
-    │ (DOWNTREND)  │ (-34.4%)│            │          │ -641.4 USDT  │ (-30% peak)  │
-    └──────────────┴─────────┴────────────┴──────────┴──────────────┴──────────────┘
-    
-    Conclusion: Strategy is HIGHLY PROFITABLE in uptrends but CATASTROPHIC in downtrends
-    - Same win rate (95-97%) in both conditions
-    - Difference is force exits: 0 in uptrends, 27 in downtrends
-    - Uptrends: All positions exit via trailing stop at profit
-    - Downtrends: Positions never reach profit, held until massive losses
-    
-    === RECOMMENDED FIXES ===
-    Choose ONE of the following approaches:
-    
-    Option A: Time-Based Exit (Prevent 30-50 day holds)
-    - Add max_entry_position_age = 10080 (7 days in minutes)
-    - Force close positions held > 7 days without profit
-    - Would have prevented worst RUNE (-35%), DOGE (-33%), HBAR (-29%) losses
-    - Trade-off: May exit positions that eventually recover
-    
-    Option B: Realistic Stoploss (Limit maximum loss)
-    - Change stoploss from -0.99 to -0.10 (10% hard stop)
-    - Exits losing positions before -20% to -35% losses
-    - Would have saved ~400 USDT in Jan-June period
-    - Trade-off: May get stopped out during temporary dips
-    
-    Option C: Easier Trailing Stop Activation (Lower profit threshold)
-    - Change trailing_stop_positive_offset from 0.004 to 0.002 (0.4% → 0.2%)
-    - More positions reach activation during weak markets
-    - Helps in sideways/choppy markets
-    - Trade-off: May exit winners earlier in strong trends
-    
-    Option D: Macro Trend Filter (Only trade uptrends)
-    - Add 50-200 day MA filter on BTC or market cap
-    - Block ALL entries when macro trend is bearish
-    - Would have avoided entire Jan-June downtrend (saved 343.5 USDT)
-    - Trade-off: Miss potential profitable trades in sideways markets
-    
-    Option E: Accept Current Behavior (Uptrend-only strategy)
-    - Acknowledge strategy only works in bull markets
-    - Manually close positions if market turns bearish
-    - Use only during confirmed uptrends (>50 day MA rising)
-    - Requires active monitoring and manual intervention
-    
-    Status: STRATEGY REQUIRES MODIFICATION FOR DOWNTREND PROTECTION
-    Current configuration: Excellent for uptrends, catastrophic for downtrends
+    Status: NEW STRATEGY - REQUIRES THOROUGH BACKTESTING
     """
 
     INTERFACE_VERSION = 3  # Freqtrade strategy interface version
@@ -229,25 +84,22 @@ class UTBotScalping1m(FearGreedMixin, HTFTrendMixin, IStrategy):
     # Freqtrade exits when price reaches these profit levels at specified times
     # Example: If trade reaches 3% profit at ANY time, ROI immediately exits
     minimal_roi = {
-        "0": 0.03      # 3% immediate exit - always exit at 3% profit
+        "0": 0.03,      # 3% immediate exit - always exit at 3% profit
     }
 
-    # Hard stop loss - DISABLED (testing pure trailing stop + 3-day timeout)
-    # Jun-Aug 2025 tests:
-    # - With -8% stop: 68 hits = -556 USDT (too tight)
-    # - With -15% stop: 21 hits = -318 USDT (still problematic)
-    # Analysis: Stop losses kill trades that would recover via trailing stop
-    # Solution: Rely on 3-day timeout only, let trailing stops do all the work
-    # Trailing stops have 96-97% win rate, hard stops have 0% win rate
-    stoploss = -0.99  # Effectively disabled
+    # Hard stop loss - DISABLED (relies entirely on trailing stop)
+    # Testing showed that ANY hard stop loss destroys profitability:
+    # - With -2% stop: 565 hits = -1,235 USDT loss (account blown)
+    # - With -20% stop: 7 hits = -141 USDT loss (reduced profit by 40%)
+    # - Without stop: 0 hits = +71 USDT profit (trailing stop 99% win rate)
+    # Conclusion: Let trailing stop do all the work at +0.36% avg gains
+    stoploss = -0.99  # Effectively disabled (99% loss - will never hit)
 
-    # Trailing stop configuration - optimized for downtrend protection
+    # Trailing stop configuration - original settings
     trailing_stop = True  # Enable trailing stop feature
-    trailing_stop_positive = 0.001  # Trail 0.1% below highest price (tighter trailing)
-    trailing_stop_positive_offset = 0.002  # Activate at 0.2% profit (lowered from 0.4%)
+    trailing_stop_positive = 0.002  # Trail 0.2% below highest price
+    trailing_stop_positive_offset = 0.004  # Activate at 0.4% profit
     trailing_only_offset_is_reached = True  # Don't trail until offset is reached
-    # Note: Lower activation (0.2%) helps exit struggling positions in weak markets
-    # Tighter trail (0.1%) captures profits quickly after activation
 
     # Exit signals (UT Bot opposite) - exit when UT Bot flips direction
     # WARNING: These have 1.7% win rate in backtests (catastrophic!)
@@ -255,18 +107,11 @@ class UTBotScalping1m(FearGreedMixin, HTFTrendMixin, IStrategy):
     exit_profit_only = False  # Exit on signal even at loss (dangerous on short timeframes!)
     exit_profit_offset = 0.0  # No minimum profit required for exit signal
     
-    # Custom stoploss
-    use_custom_stoploss = False
-    use_custom_exit = True  # Enable custom_exit for live trading timeout
+    # Custom stoploss - disabled
+    use_custom_stoploss = False  # No custom stoploss logic needed
 
-    # Maximum trade duration - prevent 30-50 day holds
-    # Jan-Jun 2025: 27 trades held 26-50 days each, lost -641 USDT total
-    # Solution: Force exit after 2 days using custom_exit callback
-    # Note: max_entry_position_age only prevents new entries, doesn't force exits
-    max_entry_position_age = 2880  # 2 days in minutes (2 * 24 * 60) - NOT USED for exits
-
-    # Timeframe - 1-minute candles for ultra-fast scalping
-    timeframe = '1m'
+    # Timeframe - 5-minute candles for scalping
+    timeframe = '5m'
 
     # Run "populate_indicators()" only for new candle
     # True = better performance, False = updates on every tick (slower)
@@ -290,7 +135,7 @@ class UTBotScalping1m(FearGreedMixin, HTFTrendMixin, IStrategy):
     # Fear & Greed Index Parameters (from FearGreedMixin)
     # Enable sentiment-based filtering to avoid trading in extreme market conditions
     fear_greed_enabled = BooleanParameter(
-        default=False,  # DISABLED - testing baseline without sentiment filter
+        default=True,  # ENABLED - contrarian strategy test
         space="buy",
         optimize=True,
         load=True
@@ -318,7 +163,7 @@ class UTBotScalping1m(FearGreedMixin, HTFTrendMixin, IStrategy):
         These pair/interval combinations are non-tradeable, unless they are part
         of the whitelist as well.
         
-        HTF Trend Mixin: Automatically loads 15m data for all pairs
+        HTF Trend Mixin: Automatically loads 15m data for all pairs (5m → 15m mapping)
         SuperTrend on 15m timeframe helps filter out counter-trend entries
         """
         # Get pairs from HTFTrendMixin (loads 5m data for all trading pairs)
@@ -426,8 +271,7 @@ class UTBotScalping1m(FearGreedMixin, HTFTrendMixin, IStrategy):
         
         # Higher Timeframe (HTF) Trend - Add 5m SuperTrend trend indicators
         # Filters entries to only trade when 5m timeframe is bullish
-        # DISABLED for baseline testing
-        # dataframe = self.add_htf_trend_indicators(dataframe, metadata)
+        dataframe = self.add_htf_trend_indicators(dataframe, metadata)
 
         return dataframe  # Return dataframe with all indicators calculated
 
@@ -470,10 +314,9 @@ class UTBotScalping1m(FearGreedMixin, HTFTrendMixin, IStrategy):
         # Condition 5: Higher Timeframe (HTF) Trend check
         # Only trade when 5m timeframe SuperTrend is bullish
         # Helps filter out counter-trend trades and improves win rate
-        # DISABLED for baseline testing
-        # htf_bullish = self.check_htf_trend(dataframe, direction='bullish')
-        # if htf_bullish is not None:
-        #     conditions.append(htf_bullish)
+        htf_bullish = self.check_htf_trend(dataframe, direction='bullish')
+        if htf_bullish is not None:
+            conditions.append(htf_bullish)
         
         # Apply all conditions
         if conditions:
@@ -495,9 +338,6 @@ class UTBotScalping1m(FearGreedMixin, HTFTrendMixin, IStrategy):
         Exit Conditions:
         1. UT Bot generates SELL signal (price crossed below trailing stop)
         2. Valid data exists (volume > 0)
-        
-        NOTE: Timeout logic (2-day max hold) is handled by custom_exit() for live trading.
-        In backtesting, use max_entry_position_age to prevent new entries on old positions.
         """
         dataframe.loc[
             (
@@ -513,70 +353,6 @@ class UTBotScalping1m(FearGreedMixin, HTFTrendMixin, IStrategy):
 
 
 
-    def custom_stoploss(self, pair: str, trade: Trade, current_time: datetime, current_rate: float,
-                        current_profit: float, after_fill: bool, **kwargs) -> Optional[float]:
-        """
-        Custom stoploss logic - Force exit trades after 2 days
-        
-        This works in BOTH backtesting and live trading. After 2 days (2880 minutes),
-        return a stoploss just above current profit to trigger immediate exit.
-        
-        Args:
-            pair: Trading pair
-            trade: Current trade object
-            current_time: Current candle timestamp
-            current_rate: Current price
-            current_profit: Current profit (as decimal, e.g., 0.05 = 5%)
-            after_fill: True if trade was just opened
-            **kwargs: Additional parameters
-            
-        Returns:
-            Stoploss value (0 to -1), or None to use strategy stoploss
-        """
-        # Calculate trade duration in minutes
-        trade_duration = (current_time - trade.open_date_utc).total_seconds() / 60
-        
-        # Force exit if trade has been open for 2 days (2880 minutes)
-        if trade_duration >= 2880:
-            logger.info(f"Timeout stoploss for {pair}: held {trade_duration/1440:.1f} days, profit {current_profit:.2%}")
-            # Return stoploss slightly above current profit to force immediate exit
-            # Add 0.1% buffer to ensure it triggers
-            return current_profit + 0.001
-        
-        # Use strategy stoploss (-99%)
-        return None
-
-
-    def custom_exit(self, pair: str, trade: Trade, current_time: datetime, current_rate: float,
-                    current_profit: float, **kwargs) -> Optional[Union[str, bool]]:
-        """
-        Custom exit logic - Force close trades after 2 days (2880 minutes)
-        
-        This is for LIVE/DRY-RUN mode only (doesn't work in backtesting).
-        In backtesting, use custom_stoploss() instead.
-        
-        Args:
-            pair: Trading pair
-            trade: Current trade object
-            current_time: Current candle timestamp
-            current_rate: Current price
-            current_profit: Current profit (as decimal, e.g., 0.05 = 5%)
-            **kwargs: Additional parameters
-            
-        Returns:
-            'timeout_2d' if trade should exit due to 2-day timeout, None otherwise
-        """
-        # Calculate trade duration in minutes
-        trade_duration = (current_time - trade.open_date_utc).total_seconds() / 60
-        
-        # Force exit if trade has been open for 2 days (2880 minutes)
-        if trade_duration >= 2880:
-            logger.info(f"Timeout exit for {pair}: held {trade_duration/1440:.1f} days, profit {current_profit:.2%}")
-            return 'timeout_2d'
-        
-        # No exit signal
-        return None
-
 
 """
 =============================================================================
@@ -587,7 +363,7 @@ Copy the code below (between the START and END markers) into TradingView Pine Ed
 ────────────────────────── START PINE SCRIPT ──────────────────────────
 
 //@version=5
-strategy("UT Bot Strategy (Freqtrade)", overlay=true, 
+strategy("UT Bot Strategy 5m (Freqtrade)", overlay=true, 
          initial_capital=1000, default_qty_type=strategy.fixed, default_qty_value=100,
          commission_type=strategy.commission.percent, commission_value=0.1,
          process_orders_on_close=false,
@@ -753,17 +529,17 @@ alertcondition(sellSignal, title="UT Bot Sell", message="UT Bot: SELL Signal")
 // - Trail stop = highestPrice * 0.996 (99.6% = -0.4%)
 // - Closes position when close <= trailStopPrice
 //
-// Stop Loss: DISABLED (-100%)
+// Stop Loss: DISABLED (-99%)
 // - No stop loss set, relying on ROI and trailing stop
 // - Long-term trades may result in large losses in bear markets
 //
 // Exit Signals: DISABLED in Freqtrade (use_exit_signal = False)
-//               UT Bot sell signals had only 1.1% win rate
+//               UT Bot sell signals typically have low win rate on lower timeframes
 //
-// Known Issue: Strategy holds losing positions indefinitely
-// - 2 trades left open in 7-day backtest lost -18.8 USDT (-9.4% avg)
+// Important: Monitor strategy performance on 5m timeframe
 // - Trailing stop only activates AFTER 0.6% profit (never for losing trades)
-// - Need to add max trade duration or hard stop loss for bear market protection
+// - Consider adding max trade duration or hard stop loss for downtrend protection
+// - Test thoroughly before live trading
 
 ─────────────────────────── END PINE SCRIPT ───────────────────────────
 =============================================================================
